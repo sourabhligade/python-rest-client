@@ -221,13 +221,14 @@ class DeltaRestClient:
       order['stop_price'] = str(stop_price)
     return self.create_order(order)
 
-  def place_order(self, product_id, size, side, limit_price=None, time_in_force=None, order_type=OrderType.LIMIT, post_only='false', client_order_id = None):
+  def place_order(self, product_id, size, side, limit_price=None, time_in_force=None, order_type=OrderType.LIMIT, post_only='false', client_order_id = None, reduce_only='false'):
     order = {
       'product_id': product_id,
       'size': int(size),
       'side': side,
       'order_type': order_type.value,
-      'post_only': post_only
+      'post_only': post_only,
+      'reduce_only': reduce_only
     }
     if order_type.value == 'limit_order':
       order['limit_price'] = str(limit_price)

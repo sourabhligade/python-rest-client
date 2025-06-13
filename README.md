@@ -113,6 +113,7 @@ order_response = delta_client.place_stop_order(
 				limit_price='7800',
         order_type=OrderType.LIMIT,
      		time_in_force=TimeInForce.FOK
+        reduce_only='false'
     )
 ```
 
@@ -124,7 +125,8 @@ order_response = delta_client.place_stop_order(
 | limit_price   | `string` | order price (ignored if market order) | false                    |
 | order_type    | `string` | limit or market                       | false (LIMIT by default) |
 | time_in_force | `string` | IOC or GTC or FOK                     | false (GTC by default)   |
-| post_only     | `string` | true or false                         | false (false by default) |
+| post_only     | `string` | maker order (true or false)           | false (false by default) |
+| reduce_only   | `string` | reduce only order (true or false)     | false (false by default) |
 
 > **Place Stop Order**
 
