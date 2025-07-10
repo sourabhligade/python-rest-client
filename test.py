@@ -2,11 +2,12 @@ import time
 import requests
 from delta_rest_client import DeltaRestClient, OrderType
 from delta_rest_client.helpers import generate_signature_headers
+import os 
 
-# API credentials
-api_key = 'EyAvYHSNHY09MfS12KDSQC6dcUZGlO'
-api_secret = 'yqsYbHN3dtR7kunYfmTF0a4f9oSXzqJaFhej0Ke1blV4oseSDBy1Rk8jprCw'
-base_url = 'https://testnet-api.delta.exchange'
+
+api_key = os.getenv('api_key')
+api_secret = os.getenv('api_secret')
+base_url = os.getenv('base_url')
 
 # Initialize SDK client (for basic actions)
 delta_client = DeltaRestClient(
@@ -108,7 +109,3 @@ except Exception as e:
         print("📄 Status:", getattr(e.response, 'status_code', 'Unknown'))
         print("📄 Response:", getattr(e.response, 'text', 'No text'))
 
-    print("\n🔧 Troubleshooting:")
-    print("1. Ensure testnet API key is valid")
-    print("2. Confirm testnet account has funds")
-    print("3. Verify product ID is correct")
