@@ -11,9 +11,6 @@ api_key = os.getenv('api_key')
 api_secret = os.getenv('api_secret')
 base_url = os.getenv('base_url')
 
-# Check env variables
-assert api_key and api_secret and base_url, "❌ Missing .env values"
-print(f"API Key: {api_key}\nBase URL: {base_url}")
 
 # Initialize Delta client
 client = DeltaRestClient(
@@ -22,88 +19,68 @@ client = DeltaRestClient(
     api_secret=api_secret
 )
 
-# Choose product (BTCUSDT-PERP = ID 84)
+# Choose product ID (e.g., BTCUSDT-PERP)
 product_id = 84
 product = client.get_product(product_id)
 settling_asset_id = product["settling_asset"]["id"]
 
-# Step 1: Place Market Buy Order
+# Place market buy order
 order = client.place_order(
     product_id=product_id,
     size=1,
     side="buy",
     order_type=OrderType.MARKET
 )
+entry_price = order.get("price", 100)
 
-# Get entry price
-entry_price = float(order.get("average_fill_price") or order.get("price") or 100)
-print("✅ Market Buy Order:", order)
-print(f"🎯 Entry Price: {entry_price}")
-
-# Step 2: Calculate SL & TP prices
+# Calculate SL/TP
 risk = 10
 sl_price = round(entry_price - risk, 2)
 tp_price = round(entry_price + 4 * risk, 2)
-print(f"📉 SL Price: {sl_price}")
-print(f"📈 TP Price: {tp_price}")
 
-# Step 3: Sign headers for /v2/orders
+# Signature generator
 def sign_headers(payload):
-    timestamp = str(int(time.time() * 1000))
+    ts = str(int(time.time() * 1000))
     return generate_signature_headers(
         api_key=api_key,
         api_secret=api_secret,
-        request_path="/v2/orders",
+        request_path="/orders/trigger",
         method="POST",
-        timestamp=timestamp,
+        timestamp=ts,
         body=payload
     )
 
-# Step 4: Place Take-Profit Order
 tp_payload = {
     "product_id": product_id,
     "size": 1,
-    "side": "sell",
-    "order_type": "limit_order",
-    "limit_price": tp_price,
-    "stop_price": tp_price,
-    "stop_order_type": "take_profit_order",
-    "time_in_force": "gtc",
-    "reduce_only": True
+    "side": "sell",                            # Assuming you're closing a long position
+    "order_type": "limit_order",               # Must be "limit_order"
+    "limit_price": tp_price,                   # The price at which you want to take profit
+    "stop_order_type": "take_profit_order",    # Required for TP
+    "stop_price": tp_price,                    # ✅ Use stop_price instead of trigger_price
+    "time_in_force": "gtc",                    # Good Till Canceled
+    "reduce_only": True                        # Prevents opening a new position
 }
 
-tp_response = requests.post(
-    url=base_url + "/v2/orders",
+requests.post(
+    url=base_url + "/orders/trigger",
     headers=sign_headers(tp_payload),
     json=tp_payload
 )
-print("📈 TP Response:", tp_response.status_code)
-try:
-    print("TP JSON:", tp_response.json())
-except Exception as e:
-    print("❌ TP JSON decode error:", e)
-    print("🔍 TP Raw Response:", tp_response.text)
 
-# Step 5: Place Stop-Loss Order
+# Place SL order (market sell)
 sl_payload = {
     "product_id": product_id,
     "size": 1,
     "side": "sell",
     "order_type": "market_order",
-    "stop_price": sl_price,
+    "trigger_price": sl_price,
     "stop_order_type": "stop_loss_order",
     "time_in_force": "gtc",
     "reduce_only": True
 }
-
-sl_response = requests.post(
-    url=base_url + "/v2/orders",
+requests.post(
+    url=base_url + "/orders/trigger",
     headers=sign_headers(sl_payload),
     json=sl_payload
 )
-print("📉 SL Response:", sl_response.status_code)
-try:
-    print("SL JSON:", sl_response.json())
-except Exception as e:
-    print("❌ SL JSON decode error:", e)
-    print("🔍 SL Raw Response:", sl_response.text)

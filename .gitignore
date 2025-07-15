@@ -5,3 +5,5 @@ dist
 *.egg-info
 delta_test.py
 .vscode
+.env
+.env.local
