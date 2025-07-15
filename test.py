@@ -1,86 +1,89 @@
-import time
 import os
+import time
+import math
 import requests
 from dotenv import load_dotenv
-from delta_rest_client import DeltaRestClient, OrderType
+from delta_rest_client import DeltaRestClient
 from delta_rest_client.helpers import generate_signature_headers
 
-# Load API credentials from .env
+# Load credentials
 load_dotenv()
-api_key = os.getenv('api_key')
-api_secret = os.getenv('api_secret')
-base_url = os.getenv('base_url')
+api_key = os.getenv("api_key")
+api_secret = os.getenv("api_secret")
+base_url = os.getenv("base_url")  # https://cdn-ind.testnet.deltaex.org
 
-
-# Initialize Delta client
-client = DeltaRestClient(
+# Initialize REST client
+delta_client = DeltaRestClient(
     base_url=base_url,
     api_key=api_key,
     api_secret=api_secret
 )
 
-# Choose product ID (e.g., BTCUSDT-PERP)
-product_id = 84
-product = client.get_product(product_id)
-settling_asset_id = product["settling_asset"]["id"]
+# Product config (change this for different contracts)
+product_id = 84  # Example: BTCUSDT perpetual
+lot_size = 1
 
-# Place market buy order
-order = client.place_order(
-    product_id=product_id,
-    size=1,
-    side="buy",
-    order_type=OrderType.MARKET
-)
-entry_price = order.get("price", 100)
+# Get current market price
+product = delta_client.get_product(product_id)
+tick_size = float(product['tick_size'])
 
-# Calculate SL/TP
-risk = 10
-sl_price = round(entry_price - risk, 2)
-tp_price = round(entry_price + 4 * risk, 2)
+# Get LTP (last traded price)
+ltp = float(delta_client.get_ticker(product_id)['spot_price'])
 
-# Signature generator
-def sign_headers(payload):
-    ts = str(int(time.time() * 1000))
-    return generate_signature_headers(
-        api_key=api_key,
-        api_secret=api_secret,
-        request_path="/orders/trigger",
-        method="POST",
-        timestamp=ts,
-        body=payload
-    )
+# Entry price = current LTP
+entry_price = round(ltp, 2)
 
-tp_payload = {
+# SL and TP as % of entry price
+sl_percent = 0.02   # 2% loss
+tp_percent = 0.10   # 10% gain
+
+sl_trigger_price = round(entry_price * (1 - sl_percent), 2)
+sl_limit_price = sl_trigger_price  # Can add buffer if needed
+
+tp_trigger_price = round(entry_price * (1 + tp_percent), 2)
+tp_limit_price = tp_trigger_price  # Can set slightly worse to ensure fill
+
+# Round all prices to tick size
+def round_to_tick(price, tick):
+    return round(math.floor(price / tick) * tick, 2)
+
+entry_price = round_to_tick(entry_price, tick_size)
+sl_trigger_price = round_to_tick(sl_trigger_price, tick_size)
+sl_limit_price = round_to_tick(sl_limit_price, tick_size)
+tp_trigger_price = round_to_tick(tp_trigger_price, tick_size)
+tp_limit_price = round_to_tick(tp_limit_price, tick_size)
+
+# Final order payload
+order_payload = {
     "product_id": product_id,
-    "size": 1,
-    "side": "sell",                            # Assuming you're closing a long position
-    "order_type": "limit_order",               # Must be "limit_order"
-    "limit_price": tp_price,                   # The price at which you want to take profit
-    "stop_order_type": "take_profit_order",    # Required for TP
-    "stop_price": tp_price,                    # ✅ Use stop_price instead of trigger_price
-    "time_in_force": "gtc",                    # Good Till Canceled
-    "reduce_only": True                        # Prevents opening a new position
+    "limit_price": entry_price,
+    "size": lot_size,
+    "side": "buy",
+    "order_type": "limit_order",
+    "stop_trigger_method": "last_traded_price",
+    "bracket_stop_loss_limit_price": sl_limit_price,
+    "bracket_stop_loss_price": sl_trigger_price,
+    "bracket_take_profit_limit_price": tp_limit_price,
+    "bracket_take_profit_price": tp_trigger_price,
+    "time_in_force": "gtc"
 }
 
-requests.post(
-    url=base_url + "/orders/trigger",
-    headers=sign_headers(tp_payload),
-    json=tp_payload
+# Generate signed headers manually (optional if SDK handles this)
+timestamp = str(int(time.time() * 1000))
+headers = generate_signature_headers(
+    api_key=api_key,
+    api_secret=api_secret,
+    request_path="/v2/orders",
+    method="POST",
+    timestamp=timestamp,
+    body=order_payload
 )
 
-# Place SL order (market sell)
-sl_payload = {
-    "product_id": product_id,
-    "size": 1,
-    "side": "sell",
-    "order_type": "market_order",
-    "trigger_price": sl_price,
-    "stop_order_type": "stop_loss_order",
-    "time_in_force": "gtc",
-    "reduce_only": True
-}
-requests.post(
-    url=base_url + "/orders/trigger",
-    headers=sign_headers(sl_payload),
-    json=sl_payload
-)
+# Send request using SDK (preferred)
+response = delta_client.request("POST", "/v2/orders", order_payload, auth=True)
+
+# Alternatively, send raw request:
+# response = requests.post(base_url + "/v2/orders", headers=headers, json=order_payload)
+
+print("Order response:")
+print(response)
